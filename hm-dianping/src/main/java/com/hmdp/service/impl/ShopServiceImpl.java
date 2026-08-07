@@ -9,6 +9,7 @@ import com.hmdp.entity.Shop;
 import com.hmdp.mapper.ShopMapper;
 import com.hmdp.service.IShopService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.hmdp.utils.CacheClient;
 import com.hmdp.utils.RedisData;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -34,13 +35,19 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
     @Resource
     private StringRedisTemplate stringRedisTemplate;
 
+    @Resource
+    private CacheClient cacheClient;
     @Override
     public Result queryById(Long id) {
+        //缓存穿透
+        Shop shop = cacheClient
+                .queryWithMutex("cache:shop:", id, Shop.class, this::getById, 20L, TimeUnit.MINUTES);
+
         //互斥锁
         // Shop shop = queryWithMutex(id);
 
         //逻辑过期
-        Shop shop = queryWithLogicalExpire(id);
+        //Shop shop = queryWithLogicalExpire(id);
         if (shop == null) {
             return Result.fail("店铺不存在");
         }
@@ -124,7 +131,8 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         }
         return shop;
     }
-    public Shop queryWithPassThrough(Long id){
+
+    /*public Shop queryWithPassThrough(Long id){
         String key = "cache:shop:" + id;
         String shopJson = stringRedisTemplate.opsForValue().get(key);
         //命中缓存
@@ -146,7 +154,8 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         //数据库有只是缓存没命中 写入缓存
         stringRedisTemplate.opsForValue().set(key, JSONUtil.toJsonStr(shop),30L, TimeUnit.MINUTES);
         return shop;
-    }
+    }*/
+
     private boolean tryLock(String key) {
         Boolean flag = stringRedisTemplate.opsForValue().setIfAbsent(key, "1", 10, TimeUnit.SECONDS);
         return BooleanUtil.isTrue(flag);
